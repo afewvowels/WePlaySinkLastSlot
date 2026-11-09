@@ -1,0 +1,9 @@
+{
+  "name": "WePlaySinkLastSlot",
+  "version": "0.3.6",
+  "title": "WePlay: Sink Last Slot",
+  "author": "afewvowels",
+  "factorio_version": "2.1",
+  "description": "Feed the void. Every chest and storage tank gets a toggle: chests delete whatever lands in their last slot, tanks void their top layer of fluid, so your factory never backs up.",
+  "dependencies": ["base >= 2.1.0"]
+}

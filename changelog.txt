@@ -1,0 +1,71 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.3.6
+Date: 2026-11-05
+  Bugfixes:
+    - Fixed tank voiding on Factorio 2.1, where remove_fluid takes a fluidbox index and an amount.
+    - Fluid readers that report the fluidbox index are now preferred, so multi-fluidbox modded
+      tanks void from the right slot.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.5
+Date: 2026-11-05
+  Bugfixes:
+    - Fixed tank voiding on Factorio 2.1, where remove_fluid takes the fluid and amount as two arguments.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.4
+Date: 2026-11-05
+  Bugfixes:
+    - Storage tank toggle panel now anchors to the pipe window (Factorio 2.1 has no separate tank window).
+    - Tank voiding tries every known fluid API (2.0 and newer) and remembers the one that works.
+    - If tank voiding still fails, the chat message now includes the exact error.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.3
+Date: 2026-11-05
+  Bugfixes:
+    - The toggle panel now finds the storage tank window by scanning the game's GUI types, so it
+      snaps onto the tank window instead of floating.
+  Changes:
+    - If no window match is found, the floating panel starts closer to the entity window, can be
+      dragged by its title bar, and remembers where you put it.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.2
+Date: 2026-11-05
+  Bugfixes:
+    - Fixed a crash on Factorio 2.1 ("LuaEntity doesn't contain key fluidbox") when a tank voided fluid.
+    - Tank fluid access is now crash-proof: if the fluid API is unavailable, tank voiding switches
+      off with a chat message instead of erroring. Chests keep working.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.1
+Date: 2026-11-05
+  Bugfixes:
+    - Fixed the toggle panel not appearing on storage tanks. If the game has no matching anchor
+      for an entity's GUI, the panel now floats beside it instead of staying hidden.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.0
+Date: 2026-11-05
+  Changes:
+    - Renamed to WePlay: Sink Last Slot (internal name WePlaySinkLastSlot).
+    - Settings renamed to the wp-sink-last-slot- prefix.
+  Features:
+    - Storage tanks (including modded ones) get a "Void excess fluid" toggle that keeps the top
+      of the tank free by voiding fluid above the headroom line.
+    - New map settings: "Void tanks by default" and "Tank headroom (fluid units)", default 1000.
+      Tanks smaller than the headroom keep 10% of their capacity free instead.
+---------------------------------------------------------------------------------------------------
+Version: 0.2.0
+Date: 2026-11-05
+  Changes:
+    - Removed the separate sink chest entity. Every chest (regular and logistic) now has a
+      "Sink last slot" toggle in its GUI.
+    - New map setting "Sink chests by default" decides the state of chests nobody has toggled.
+    - Removed the slot-count startup setting (chests keep their own sizes).
+  Features:
+    - Copy-paste entity settings carries the toggle between chests.
+    - Cloned chests keep their toggle.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.0
+Date: 2026-11-05
+  Features:
+    - Sink chest: fills normally, deletes anything that lands in its last usable slot.
+    - Respects the red inventory limit bar (sinks the slot just before it).
+    - Startup setting for slot count, runtime setting for check interval.
+    - Unlocked by Logistics.
