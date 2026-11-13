@@ -15,15 +15,24 @@ local TYPES = { "container", "logistic-container", "storage-tank" }
 local FRAME = "wp_sink_last_slot_frame"
 local CHECK = "wp_sink_last_slot_checkbox"
 
--- storage.overrides : unit_number -> bool   (explicit per-entity choice)
--- storage.active    : unit_number -> entity (entities currently sinking)
--- storage.list      : array of unit_numbers (round-robin order)
--- storage.in_list   : unit_number -> true
--- storage.cursor    : round-robin position
--- storage.open      : player_index -> entity (entity whose GUI is open)
+-- storage.overrides        : unit_number -> bool   (explicit per-entity choice)
+-- storage.override_entity  : unit_number -> entity (entities that have an override)
+-- storage.by_pos           : "surface:x:y" -> unit_number (for carrying overrides across upgrades)
+-- storage.pos_of           : unit_number -> "surface:x:y" (reverse of by_pos)
+-- storage.kind_of_id       : unit_number -> "chest" | "tank" (for entities that have an override)
+-- storage.active           : unit_number -> entity (entities currently sinking)
+-- storage.list             : array of unit_numbers (round-robin order)
+-- storage.in_list          : unit_number -> true
+-- storage.cursor           : round-robin position
+-- storage.open             : player_index -> entity (entity whose GUI is open)
+-- storage.tank_api_broken  : true once tank voiding has disabled itself (saved, so it can't desync)
 
 local function init_storage()
   storage.overrides = storage.overrides or {}
+  storage.override_entity = storage.override_entity or {}
+  storage.by_pos = storage.by_pos or {}
+  storage.pos_of = storage.pos_of or {}
+  storage.kind_of_id = storage.kind_of_id or {}
   storage.active = storage.active or {}
   storage.list = storage.list or {}
   storage.in_list = storage.in_list or {}
@@ -44,7 +53,41 @@ local function is_supported(entity)
   return entity and entity.valid and KIND[entity.type] ~= nil and entity.unit_number ~= nil
 end
 
+-- Which entities the "by default" settings may switch on. Hand toggles work on
+-- anything, but the defaults skip:
+--   * hidden/script containers other mods use internally (not player-placeable)
+--   * requester and buffer chests (voiding them would drain the logistic network)
+-- Derived only from prototypes, so this cache is identical on every client.
+local SKIP_LOGISTIC_MODES = { requester = true, buffer = true }
+local eligible_cache = {}   -- entity name -> bool
+
+local function prototype_is_player_placeable(proto)
+  local ok, value = pcall(function() return proto.has_flag("player-creation") end)
+  if ok and value ~= nil then return value end
+  ok, value = pcall(function() return proto.flags and proto.flags["player-creation"] end)
+  if ok and value then return true end
+  ok, value = pcall(function()
+    local items = proto.items_to_place_this
+    return items ~= nil and next(items) ~= nil
+  end)
+  return ok and value or false
+end
+
+local function default_eligible(entity)
+  local cached = eligible_cache[entity.name]
+  if cached ~= nil then return cached end
+  local proto = entity.prototype
+  local eligible = prototype_is_player_placeable(proto)
+  if eligible and entity.type == "logistic-container" then
+    local ok, mode = pcall(function() return proto.logistic_mode end)
+    if ok and mode and SKIP_LOGISTIC_MODES[mode] then eligible = false end
+  end
+  eligible_cache[entity.name] = eligible
+  return eligible
+end
+
 local function default_on(entity)
+  if not default_eligible(entity) then return false end
   if kind_of(entity) == "tank" then return setting("tanks-default-on") end
   return setting("chests-default-on")
 end
@@ -73,18 +116,60 @@ local function refresh_active(entity)
   end
 end
 
+local function pos_key(entity)
+  local p = entity.position
+  return entity.surface.index .. ":" .. p.x .. ":" .. p.y
+end
+
+local function index_override(entity)
+  local id = entity.unit_number
+  local key = pos_key(entity)
+  storage.override_entity[id] = entity
+  storage.by_pos[key] = id
+  storage.pos_of[id] = key
+  storage.kind_of_id[id] = kind_of(entity)
+end
+
 local function set_override(entity, value)
   storage.overrides[entity.unit_number] = value
+  index_override(entity)
   script.register_on_object_destroyed(entity)
   refresh_active(entity)
 end
 
+-- Fast-replace and upgrades remove the old entity and build a new one in the
+-- same spot within the same tick. If the old one had an override and is now
+-- gone, carry the override over to the new entity.
+local function inherit_override(entity)
+  local old_id = storage.by_pos[pos_key(entity)]
+  if not old_id or old_id == entity.unit_number then return end
+  local old = storage.override_entity[old_id]
+  local value = storage.overrides[old_id]
+  if value == nil or (old and old.valid) then return end
+  -- The old entity is gone, so only saved data can be read about it
+  if storage.kind_of_id[old_id] ~= kind_of(entity) then return end
+  set_override(entity, value)
+end
+
 local function rebuild()
   storage.active, storage.list, storage.in_list, storage.cursor = {}, {}, {}, 1
+  storage.override_entity, storage.by_pos, storage.pos_of, storage.kind_of_id = {}, {}, {}, {}
+  local seen = {}
   for _, surface in pairs(game.surfaces) do
     for _, e in pairs(surface.find_entities_filtered({ type = TYPES })) do
-      if e.unit_number and is_on(e) then activate(e) end
+      local id = e.unit_number
+      if id then
+        if storage.overrides[id] ~= nil then
+          index_override(e)
+          seen[id] = true
+        end
+        if is_on(e) then activate(e) end
+      end
     end
+  end
+  -- Drop overrides for entities that no longer exist
+  for id in pairs(storage.overrides) do
+    if not seen[id] then storage.overrides[id] = nil end
   end
 end
 
@@ -106,8 +191,11 @@ end
 -- Fluid API access is wrapped in pcall: accessing a key that doesn't exist on
 -- LuaEntity raises an error, and the fluid API has changed between versions.
 -- Each step tries every known API; the first one that works is remembered.
+-- capacity_cache and the method indexes are only speed-ups: every client derives
+-- the same values from the same prototypes and API, so they can't desync.
+-- Whether tank voiding has disabled itself changes game behavior, so that lives
+-- in storage.tank_api_broken instead.
 local capacity_cache = {}   -- entity name -> capacity (not saved; rebuilt on demand)
-local tank_api_broken = false
 local read_method, remove_method   -- index into the strategy tables below, once one works
 
 local function try(f)
@@ -196,15 +284,15 @@ local function run_strategies(list, cached, ...)
 end
 
 local function report_broken(reason)
-  if tank_api_broken then return end
-  tank_api_broken = true
+  if storage.tank_api_broken then return end
+  storage.tank_api_broken = true
   game.print({ "", "[WePlay: Sink Last Slot] Tank voiding disabled for this session: ", reason,
     ". Chests still work. Please report this on the mod portal!" })
   log("Tank voiding disabled: " .. reason)
 end
 
 local function sink_tank(entity, headroom)
-  if tank_api_broken then return end
+  if storage.tank_api_broken then return end
 
   local cap = tank_capacity(entity)
   if cap <= 0 then return report_broken("couldn't read tank capacity for " .. entity.name) end
@@ -434,8 +522,66 @@ end)
 
 -- Building / removal -------------------------------------------------
 
+-- Blueprints ---------------------------------------------------------
+-- Entities with a hand toggle store it as a blueprint tag. Untouched entities
+-- store nothing, so they keep following the default where they're placed.
+
+local BP_TAG = "wp_sink_last_slot"
+
+-- The blueprint being set up can be an item stack or a library record
+local function setup_target(event, player)
+  local candidates = {
+    function() return event.stack end,
+    function() return event.record end,
+    function() return player.blueprint_to_setup end,
+    function() return player.cursor_stack end
+  }
+  for _, get in ipairs(candidates) do
+    local ok, target = pcall(get)
+    if ok and target then
+      local usable = pcall(function()
+        if target.object_name == "LuaItemStack" then
+          assert(target.valid_for_read and target.is_blueprint)
+        end
+        assert(target.get_blueprint_entities)
+      end)
+      if usable then return target end
+    end
+  end
+  return nil
+end
+
+script.on_event(defines.events.on_player_setup_blueprint, function(event)
+  local player = game.get_player(event.player_index)
+  if not player then return end
+  local ok, mapping = pcall(function() return event.mapping.get() end)
+  if not (ok and mapping) then return end
+  local target = setup_target(event, player)
+  if not target then return end
+  for index, entity in pairs(mapping) do
+    if is_supported(entity) then
+      local value = storage.overrides[entity.unit_number]
+      if value ~= nil then
+        pcall(function() target.set_blueprint_entity_tag(index, BP_TAG, value) end)
+      end
+    end
+  end
+end)
+
+local function apply_tags(entity, tags)
+  if tags and tags[BP_TAG] ~= nil then
+    set_override(entity, tags[BP_TAG] == true)
+  end
+end
+
+-- Building -----------------------------------------------------------
+
 local function on_built(event)
-  refresh_active(event.entity)
+  local entity = event.entity
+  if not is_supported(entity) then return end
+  inherit_override(entity)
+  apply_tags(entity, event.tags)   -- a blueprint's choice wins over an inherited one
+  refresh_active(entity)
 end
 
 local function on_cloned(event)
@@ -461,7 +607,15 @@ script.on_event(defines.events.on_entity_cloned, on_cloned, build_filter)
 
 -- Forget overrides for entities that no longer exist
 script.on_event(defines.events.on_object_destroyed, function(event)
-  if event.useful_id then storage.overrides[event.useful_id] = nil end
+  local id = event.useful_id
+  if not id then return end
+  storage.overrides[id] = nil
+  storage.override_entity[id] = nil
+  storage.kind_of_id[id] = nil
+  local key = storage.pos_of[id]
+  storage.pos_of[id] = nil
+  -- An upgrade may already have re-pointed this spot at the new entity; keep that
+  if key and storage.by_pos[key] == id then storage.by_pos[key] = nil end
 end)
 
 -- Lifecycle ----------------------------------------------------------
@@ -473,6 +627,7 @@ end)
 
 script.on_configuration_changed(function()
   init_storage()
+  storage.tank_api_broken = nil   -- the game or a mod changed; give tank voiding another try
   rebuild()
 end)
 

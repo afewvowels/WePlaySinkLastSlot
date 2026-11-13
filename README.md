@@ -42,13 +42,17 @@ When on, the tank keeps its top layer of space free by voiding any fluid above t
 
 **Shift + right-click** a chest or tank, then **Shift + left-click** another of the same kind to copy the toggle across.
 
+### Blueprints and upgrades
+
+Blueprints remember the toggle on chests and tanks you've switched by hand, and so do copy and paste and cut and paste. Untouched ones keep following the default setting wherever they're placed. Upgrading a chest or tank, by hand or with the upgrade planner, keeps its toggle too.
+
 ## Settings
 
 All settings are map settings (**Settings → Mod settings → Map**) and can be changed mid-game.
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Sink chests by default** | Off | Whether chests you haven't toggled yourself feed the void. Hand-toggled chests keep their own choice. |
+| **Sink chests by default** | Off | Whether chests you haven't toggled yourself feed the void. Hand-toggled chests keep their own choice. Requester and buffer chests are never switched on by default, so your logistic network can't drain away, but you can still toggle them by hand. |
 | **Void tanks by default** | Off | Whether storage tanks you haven't toggled yourself feed the void. Hand-toggled tanks keep their own choice. |
 | **Tank headroom (fluid units)** | 1000 | How much empty space a voiding tank keeps at the top. |
 | **Sink check interval (ticks)** | 5 | How often each sinking chest or tank is checked. Lower is faster; higher saves a little UPS in huge factories. |
@@ -65,10 +69,11 @@ You can also download it from the [mod portal](https://mods.factorio.com/mod/WeP
 - **Space Age is optional.** It works with or without it, including on space platforms.
 - Works alongside overhaul mods; any entity of type `container`, `logistic-container` or `storage-tank` gets the toggle.
 - Infinity chests and infinity pipes are left alone.
+- Hidden chests and tanks that other mods use behind the scenes are never switched on by the default settings, so their contents are safe.
 
 ## Known limits
 
-- Blueprints don't remember the toggle yet. Newly placed chests and tanks follow the default settings.
+- Items that stack to 1 (armor, vehicles) fill the last slot right away, so a sinking chest takes them about as fast as the check interval allows (12 per second at the default).
 - In modded tanks with more than one fluid slot, excess is voided starting from the first slot.
 
 Ideas and bug reports are welcome on the mod portal's **Discussion** tab or in this repo's issues.

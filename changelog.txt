@@ -1,4 +1,22 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.4.0
+Date: 2026-11-13
+  Features:
+    - Blueprints now remember the toggle. Chests and tanks you toggled by hand keep their choice when
+      blueprinted, copied or cut and pasted; untouched ones keep following the default setting.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.7
+Date: 2026-11-13
+  Bugfixes:
+    - The "by default" settings no longer switch on hidden chests and tanks that other mods use
+      internally, so their contents are never voided by surprise. Hand toggles are unchanged.
+    - The "by default" settings no longer switch on requester and buffer chests, which could drain
+      the logistic network. You can still toggle them by hand.
+    - Fixed a possible multiplayer desync if tank voiding disabled itself before a player joined.
+    - Fast-replacing or upgrading a chest or tank now keeps its toggle.
+  Changes:
+    - Tank voiding gets another try after the game or a mod is updated, if it had disabled itself.
+---------------------------------------------------------------------------------------------------
 Version: 0.3.6
 Date: 2026-11-05
   Bugfixes:
