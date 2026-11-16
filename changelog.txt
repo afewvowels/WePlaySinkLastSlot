@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.4.1
+Date: 2026-11-16
+  Bugfixes:
+    - Tank voiding now uses each tank's real capacity, including the bonus from higher quality tanks.
+      Previously quality tanks were voided down to the normal-quality cutoff. Thanks Insa!
+    - Tanks with more than one fluid storage (some modded tanks) now check each storage against its
+      own capacity.
+---------------------------------------------------------------------------------------------------
 Version: 0.4.0
 Date: 2026-11-13
   Features:

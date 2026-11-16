@@ -195,7 +195,7 @@ end
 -- the same values from the same prototypes and API, so they can't desync.
 -- Whether tank voiding has disabled itself changes game behavior, so that lives
 -- in storage.tank_api_broken instead.
-local capacity_cache = {}   -- entity name -> capacity (not saved; rebuilt on demand)
+local capacity_cache = {}   -- "name|quality|index" -> capacity (not saved; rebuilt on demand)
 local read_method, remove_method   -- index into the strategy tables below, once one works
 
 local function try(f)
@@ -204,20 +204,28 @@ local function try(f)
   return false, tostring(result):gsub("\n.*", "")  -- first line of the error only
 end
 
-local function tank_capacity(entity)
-  local cap = capacity_cache[entity.name]
+local function quality_name(entity)
+  local ok, name = pcall(function() return entity.quality.name end)
+  return ok and name or "normal"
+end
+
+-- Capacity of one fluid storage on this particular tank. Asking the entity
+-- (not its prototype) includes the bonus from higher quality tanks.
+local function tank_capacity(entity, index)
+  local key = entity.name .. "|" .. quality_name(entity) .. "|" .. index
+  local cap = capacity_cache[key]
   if cap then return cap end
   local attempts = {
-    function() return entity.prototype.fluid_capacity end,
-    function() return entity.prototype.get_fluid_capacity() end,
-    function() return entity.fluidbox.get_capacity(1) end
+    function() return entity.get_fluid_capacity(index) end,   -- 2.1, quality-aware
+    function() return entity.fluidbox.get_capacity(index) end, -- 2.0, quality-aware
+    function() return entity.prototype.fluid_capacity end      -- last resort: base capacity
   }
   cap = 0
   for _, f in ipairs(attempts) do
     local ok, value = try(f)
     if ok and type(value) == "number" and value > 0 then cap = value break end
   end
-  capacity_cache[entity.name] = cap
+  capacity_cache[key] = cap
   return cap
 end
 
@@ -294,28 +302,23 @@ end
 local function sink_tank(entity, headroom)
   if storage.tank_api_broken then return end
 
-  local cap = tank_capacity(entity)
-  if cap <= 0 then return report_broken("couldn't read tank capacity for " .. entity.name) end
-
   local method, contents = run_strategies(READERS, read_method, entity)
   if not method then return report_broken("couldn't read tank contents (" .. contents .. ")") end
   read_method = method
 
-  local total = 0
-  for _, fluid in pairs(contents) do total = total + fluid.amount end
-
-  local keep_free = headroom
-  if keep_free >= cap then keep_free = cap * 0.1 end
-  local excess = total - (cap - keep_free)
-  if excess <= 0 then return end
-
+  -- Each fluid storage is checked against its own capacity
   for _, fluid in pairs(contents) do
-    local take = math.min(fluid.amount, excess)
-    local m, err = run_strategies(REMOVERS, remove_method, entity, fluid, take)
-    if not m then return report_broken("couldn't remove fluid (" .. err .. ")") end
-    remove_method = m
-    excess = excess - take
-    if excess <= 0 then break end
+    local cap = tank_capacity(entity, fluid.index or 1)
+    if cap <= 0 then return report_broken("couldn't read tank capacity for " .. entity.name) end
+
+    local keep_free = headroom
+    if keep_free >= cap then keep_free = cap * 0.1 end
+    local excess = fluid.amount - (cap - keep_free)
+    if excess > 0 then
+      local m, err = run_strategies(REMOVERS, remove_method, entity, fluid, excess)
+      if not m then return report_broken("couldn't remove fluid (" .. err .. ")") end
+      remove_method = m
+    end
   end
 end
 
